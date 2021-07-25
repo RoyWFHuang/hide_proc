@@ -208,6 +208,15 @@ static const struct file_operations fops = {
 #define MINOR_VERSION 1
 #define DEVICE_NAME "hideproc"
 
+static void _clear_all_hideproc(void)
+{
+    pid_node_t *proc, *tmp_proc;
+    list_for_each_entry_safe (proc, tmp_proc, &hidden_proc, list_node) {
+        list_del(&proc->list_node);
+        kfree(proc);
+    }
+}
+
 static int _hideproc_init(void)
 {
     int dev_major;
@@ -242,6 +251,7 @@ fail_hideproc_init:
 static void _hideproc_exit(void)
 {
     printk(KERN_INFO "@ %s\n", __func__);
+    _clear_all_hideproc();
     hook_remove(&hook);
     device_destroy(hideproc_class, MKDEV(MAJOR(dev), MINOR_VERSION));
     class_destroy(hideproc_class);
