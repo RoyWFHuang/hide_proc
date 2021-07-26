@@ -115,7 +115,9 @@ static void init_hook(void)
 
 static int hide_process(pid_t pid)
 {
-    pid_node_t *proc = kmalloc(sizeof(pid_node_t), GFP_KERNEL);
+    pid_node_t *proc = kzalloc(sizeof(pid_node_t), GFP_KERNEL);
+    if(NULL == proc)
+        return -ENOMEM;
     proc->id = pid;
     list_add_tail(&proc->list_node, &hidden_proc);
     return SUCCESS;
@@ -175,12 +177,18 @@ static ssize_t device_write(struct file *filep,
     if (len < sizeof(add_message) - 1 && len < sizeof(del_message) - 1)
         return -EAGAIN;
 
-    message = kmalloc(len + 1, GFP_KERNEL);
-    memset(message, 0, len + 1);
+    message = kzalloc(len + 1, GFP_KERNEL);
+    if(NULL == proc)
+        return -ENOMEM;
+    // memset(message, 0, len + 1);
     copy_from_user(message, buffer, len);
     if (!memcmp(message, add_message, sizeof(add_message) - 1)) {
         kstrtol(message + sizeof(add_message), 10, &pid);
-        hide_process(pid);
+        if (SUCCESS != hide_process(pid)) {
+            kfree(message);
+            return -ENOMEM;
+        }
+
     } else if (!memcmp(message, del_message, sizeof(del_message) - 1)) {
         kstrtol(message + sizeof(del_message), 10, &pid);
         unhide_process(pid);
