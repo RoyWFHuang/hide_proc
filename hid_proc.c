@@ -127,8 +127,10 @@ static int unhide_process(pid_t pid)
 {
     pid_node_t *proc, *tmp_proc;
     list_for_each_entry_safe (proc, tmp_proc, &hidden_proc, list_node) {
-        list_del(&proc->list_node);
-        kfree(proc);
+        if(proc->id == pid) {
+            list_del(&proc->list_node);
+            kfree(proc);
+        }
     }
     return SUCCESS;
 }
