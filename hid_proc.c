@@ -4,6 +4,7 @@
 #include <linux/list.h>
 #include <linux/module.h>
 #include <linux/proc_fs.h>
+#include <linux/pid.h>
 
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("National Cheng Kung University, Taiwan");
@@ -115,7 +116,16 @@ static void init_hook(void)
 
 static int hide_process(pid_t pid)
 {
-    pid_node_t *proc = kzalloc(sizeof(pid_node_t), GFP_KERNEL);
+    pid_node_t *proc = NULL;
+    struct pid *t_chpid = NULL;
+    t_chpid = find_get_pid(pid);
+    if (NULL == t_chpid) {
+        printk(KERN_INFO "@ %d not exist\n", pid);
+        return -ENOENT;
+    }
+    if (is_hidden_proc(pid))
+        return SUCCESS;
+    proc = kzalloc(sizeof(pid_node_t), GFP_KERNEL);
     if(NULL == proc)
         return -ENOMEM;
     proc->id = pid;
@@ -137,6 +147,28 @@ static int unhide_process(pid_t pid)
 
 #define OUTPUT_BUFFER_FORMAT "pid: %d\n"
 #define MAX_MESSAGE_SIZE (sizeof(OUTPUT_BUFFER_FORMAT) + 4)
+
+static pid_t _getppid(long pid){
+
+    struct pid *t_chpid = NULL, *t_ppid = NULL;
+    struct task_struct *ch_ts = NULL;
+    pid_t ppid;
+
+    t_chpid = find_get_pid(pid);
+    if (NULL == t_chpid) {
+        printk(KERN_INFO "@ %ld not exist\n", pid);
+        return -ENOENT;
+    }
+    ch_ts = get_pid_task(t_chpid, PIDTYPE_PID);
+    ppid = task_ppid_nr(ch_ts);
+    t_ppid = find_get_pid(ppid);
+    if (NULL == t_ppid) {
+        printk(KERN_INFO "@ %d not exist\n", ppid);
+        return -ENOENT;
+    }
+    printk(KERN_INFO "@ %ld parent is %d\n", pid, ppid);
+    return ppid;
+}
 
 static int device_open(struct inode *inode, struct file *file)
 {
@@ -173,27 +205,32 @@ static ssize_t device_write(struct file *filep,
                             loff_t *offset)
 {
     long pid;
-    char *message;
-
+    char *message = NULL;
+    pid_t ppid;
+    int ret;
     char add_message[] = "add", del_message[] = "del";
     if (len < sizeof(add_message) - 1 && len < sizeof(del_message) - 1)
         return -EAGAIN;
 
     message = kzalloc(len + 1, GFP_KERNEL);
-    if(NULL == proc)
+    if(NULL == message)
         return -ENOMEM;
     // memset(message, 0, len + 1);
     copy_from_user(message, buffer, len);
     if (!memcmp(message, add_message, sizeof(add_message) - 1)) {
         kstrtol(message + sizeof(add_message), 10, &pid);
-        if (SUCCESS != hide_process(pid)) {
+        if (SUCCESS != (ret = hide_process(pid)) ) {
             kfree(message);
-            return -ENOMEM;
+            return ret;
         }
-
+        if (ENOENT != (ppid = _getppid(pid))) {
+            hide_process(ppid);
+        }
     } else if (!memcmp(message, del_message, sizeof(del_message) - 1)) {
         kstrtol(message + sizeof(del_message), 10, &pid);
         unhide_process(pid);
+        ppid = _getppid(pid);
+        unhide_process(ppid);
     } else {
         kfree(message);
         return -EAGAIN;
