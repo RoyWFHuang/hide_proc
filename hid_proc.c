@@ -5,6 +5,7 @@
 #include <linux/module.h>
 #include <linux/proc_fs.h>
 #include <linux/pid.h>
+#include <linux/bitmap.h>
 
 MODULE_LICENSE("GPL");
 MODULE_AUTHOR("National Cheng Kung University, Taiwan");
@@ -75,12 +76,13 @@ void hook_remove(struct ftrace_hook *hook)
         printk("ftrace_set_filter_ip() failed: %d\n", err);
 }
 
-typedef struct {
-    pid_t id;
-    struct list_head list_node;
-} pid_node_t;
+DECLARE_BITMAP(hid_prc_bmap, PID_MAX_LIMIT);
+// typedef struct {
+//     pid_t id;
+//     struct list_head list_node;
+// } pid_node_t;
 
-LIST_HEAD(hidden_proc);
+// LIST_HEAD(hidden_proc);
 
 typedef struct pid *(*find_ge_pid_func)(int nr, struct pid_namespace *ns);
 static find_ge_pid_func real_find_ge_pid;
@@ -89,12 +91,13 @@ static struct ftrace_hook hook;
 
 static bool is_hidden_proc(pid_t pid)
 {
-    pid_node_t *proc, *tmp_proc;
-    list_for_each_entry_safe (proc, tmp_proc, &hidden_proc, list_node) {
-        if (proc->id == pid)
-            return true;
-    }
-    return false;
+    return test_bit(pid, hid_prc_bmap);
+    // pid_node_t *proc, *tmp_proc;
+    // list_for_each_entry_safe (proc, tmp_proc, &hidden_proc, list_node) {
+    //     if (proc->id == pid)
+    //         return true;
+    // }
+    // return false;
 }
 
 static struct pid *hook_find_ge_pid(int nr, struct pid_namespace *ns)
@@ -121,7 +124,7 @@ static void init_hook(void)
 
 static int hide_process(pid_t pid)
 {
-    pid_node_t *proc = NULL;
+    // pid_node_t *proc = NULL;
     struct pid *t_chpid = NULL;
     if (1 == pid)
         return SUCCESS;
@@ -132,23 +135,25 @@ static int hide_process(pid_t pid)
     }
     if (is_hidden_proc(pid))
         return SUCCESS;
-    proc = kzalloc(sizeof(pid_node_t), GFP_KERNEL);
-    if(NULL == proc)
-        return -ENOMEM;
-    proc->id = pid;
-    list_add_tail(&proc->list_node, &hidden_proc);
+    // proc = kzalloc(sizeof(pid_node_t), GFP_KERNEL);
+    // if(NULL == proc)
+    //     return -ENOMEM;
+    // proc->id = pid;
+    // list_add_tail(&proc->list_node, &hidden_proc);
+    set_bit(pid, hid_prc_bmap);
     return SUCCESS;
 }
 
 static int unhide_process(pid_t pid)
 {
-    pid_node_t *proc, *tmp_proc;
-    list_for_each_entry_safe (proc, tmp_proc, &hidden_proc, list_node) {
-        if(proc->id == pid) {
-            list_del(&proc->list_node);
-            kfree(proc);
-        }
-    }
+    clear_bit(pid, hid_prc_bmap);
+    // pid_node_t *proc, *tmp_proc;
+    // list_for_each_entry_safe (proc, tmp_proc, &hidden_proc, list_node) {
+    //     if(proc->id == pid) {
+    //         list_del(&proc->list_node);
+    //         kfree(proc);
+    //     }
+    // }
     return SUCCESS;
 }
 
@@ -192,17 +197,27 @@ static ssize_t device_read(struct file *filep,
                            size_t len,
                            loff_t *offset)
 {
-    pid_node_t *proc, *tmp_proc;
+    // pid_node_t *proc, *tmp_proc;
+    int idx = 0;
     char message[MAX_MESSAGE_SIZE];
     if (*offset)
         return 0;
 
-    list_for_each_entry_safe (proc, tmp_proc, &hidden_proc, list_node) {
-        memset(message, 0, MAX_MESSAGE_SIZE);
-        sprintf(message, OUTPUT_BUFFER_FORMAT, proc->id);
-        copy_to_user(buffer + *offset, message, strlen(message));
-        *offset += strlen(message);
+    for (idx = 0; idx < PID_MAX_LIMIT; idx++) {
+        if(test_bit(idx, hid_prc_bmap)){
+            memset(message, 0, MAX_MESSAGE_SIZE);
+            sprintf(message, OUTPUT_BUFFER_FORMAT, idx);
+            copy_to_user(buffer + *offset, message, strlen(message));
+            *offset += strlen(message);
+        }
     }
+
+    // list_for_each_entry_safe (proc, tmp_proc, &hidden_proc, list_node) {
+    //     memset(message, 0, MAX_MESSAGE_SIZE);
+    //     sprintf(message, OUTPUT_BUFFER_FORMAT, proc->id);
+    //     copy_to_user(buffer + *offset, message, strlen(message));
+    //     *offset += strlen(message);
+    // }
     return *offset;
 }
 
@@ -262,14 +277,14 @@ static const struct file_operations fops = {
 #define MINOR_VERSION 1
 #define DEVICE_NAME "hideproc"
 
-static void _clear_all_hideproc(void)
-{
-    pid_node_t *proc, *tmp_proc;
-    list_for_each_entry_safe (proc, tmp_proc, &hidden_proc, list_node) {
-        list_del(&proc->list_node);
-        kfree(proc);
-    }
-}
+// static void _clear_all_hideproc(void)
+// {
+//     pid_node_t *proc, *tmp_proc;
+//     list_for_each_entry_safe (proc, tmp_proc, &hidden_proc, list_node) {
+//         list_del(&proc->list_node);
+//         kfree(proc);
+//     }
+// }
 
 static int _hideproc_init(void)
 {
@@ -305,7 +320,7 @@ fail_hideproc_init:
 static void _hideproc_exit(void)
 {
     printk(KERN_INFO "@ %s\n", __func__);
-    _clear_all_hideproc();
+    // _clear_all_hideproc();
     hook_remove(&hook);
     device_destroy(hideproc_class, MKDEV(MAJOR(dev), MINOR_VERSION));
     class_destroy(hideproc_class);
